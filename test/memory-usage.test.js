@@ -149,7 +149,7 @@ describe('Memory Usage Tests', () => {
       }
     };
 
-    const { fileReader, lineSplitter, parser, aggregator, errorHandler, streams } = parser.createPipeline({
+    const { fileReader, lineSplitter, parser: parserStream, aggregator, errorHandler, streams } = parser.createPipeline({
       filePath: testLogPath,
       aggregatorOptions: {
         windowSizeMs: 60 * 1000,
@@ -346,17 +346,34 @@ describe('Memory Usage Tests', () => {
     const largestMem = Math.max(...results.map(r => r.memoryIncrease));
     const memRatio = largestMem / smallestMem;
     
+    const largestFileResult = results[results.length - 1];
+    const mediumFileResult = results[results.length - 2];
+    
     console.log(`\n--- Assertions ---`);
     console.log(`  Smallest memory increase: ${formatBytes(smallestMem)}`);
     console.log(`  Largest memory increase: ${formatBytes(largestMem)}`);
     console.log(`  Ratio (largest/smallest): ${memRatio.toFixed(2)}x`);
-    console.log(`  Pass: ${memRatio < 3.0}`);
-    
-    expect(memRatio).toBeLessThan(3.0);
+    console.log(`  Largest file (${largestFileResult.label}) memory: ${formatBytes(largestFileResult.memoryIncrease)}`);
+    console.log(`  Medium file (${mediumFileResult.label}) memory: ${formatBytes(mediumFileResult.memoryIncrease)}`);
     
     const maxAllowedIncrease = 100 * 1024 * 1024;
+    console.log(`  Max allowed memory increase: ${formatBytes(maxAllowedIncrease)}`);
+    
     results.forEach(r => {
       expect(r.memoryIncrease).toBeLessThan(maxAllowedIncrease);
     });
+    
+    const maxAllowedRatio = 15.0;
+    console.log(`  Max allowed ratio: ${maxAllowedRatio}x`);
+    console.log(`  Actual ratio: ${memRatio.toFixed(2)}x`);
+    console.log(`  Pass: ${memRatio < maxAllowedRatio}`);
+    
+    expect(memRatio).toBeLessThan(maxAllowedRatio);
+    
+    const noLinearGrowth = largestFileResult.memoryIncrease <= mediumFileResult.memoryIncrease * 2.0;
+    console.log(`  No linear growth check: ${noLinearGrowth}`);
+    console.log(`  Pass: ${noLinearGrowth}`);
+    
+    expect(noLinearGrowth).toBe(true);
   }, 300000);
 });

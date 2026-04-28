@@ -86,11 +86,36 @@ class FileReaderStream extends Readable {
 
   _destroy(err, callback) {
     this._cleanup();
+    
     if (this.readStream) {
-      this.readStream.destroy();
+      const stream = this.readStream;
       this.readStream = null;
+      
+      const onClose = () => {
+        stream.removeListener('close', onClose);
+        stream.removeListener('error', onError);
+        callback(err);
+      };
+      
+      const onError = (destroyErr) => {
+        stream.removeListener('close', onClose);
+        stream.removeListener('error', onError);
+        callback(err || destroyErr);
+      };
+      
+      stream.on('close', onClose);
+      stream.on('error', onError);
+      
+      try {
+        stream.destroy();
+      } catch (e) {
+        stream.removeListener('close', onClose);
+        stream.removeListener('error', onError);
+        callback(err || e);
+      }
+    } else {
+      callback(err);
     }
-    callback(err);
   }
 }
 

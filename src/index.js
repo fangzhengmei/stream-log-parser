@@ -1,4 +1,4 @@
-const { pipeline } = require('stream');
+const { pipeline, Writable } = require('stream');
 const { promisify } = require('util');
 const pipelineAsync = promisify(pipeline);
 
@@ -61,20 +61,22 @@ class StreamLogParser {
       }
     };
 
-    const cleanup = () => {
-      streams.forEach(stream => {
-        try {
-          if (stream && typeof stream.destroy === 'function') {
-            stream.destroy();
-          }
-        } catch (e) {
-          // 忽略销毁时的错误
-        }
-      });
+    const onLineSplitterData = () => {
+      results.stats.totalLines++;
     };
 
-    try {
-      const onAggregatorData = (data) => {
+    const onParserData = (data) => {
+      if (data.parsed && data.timestamp !== null) {
+        results.stats.parsedLines++;
+      }
+    };
+
+    lineSplitter.on('data', onLineSplitterData);
+    parser.on('data', onParserData);
+
+    const resultCollector = new Writable({
+      objectMode: true,
+      write(data, encoding, callback) {
         if (data.type === 'window') {
           results.windows.push(data.data);
           results.stats.windowCount++;
@@ -82,25 +84,15 @@ class StreamLogParser {
           results.errorLines.push(data.data);
           results.stats.errorLines++;
         }
-      };
+        callback();
+      }
+    });
 
-      const onLineSplitterData = () => {
-        results.stats.totalLines++;
-      };
+    const allStreams = [...streams, resultCollector];
 
-      const onParserData = (data) => {
-        if (data.parsed && data.timestamp !== null) {
-          results.stats.parsedLines++;
-        }
-      };
-
-      aggregator.on('data', onAggregatorData);
-      lineSplitter.on('data', onLineSplitterData);
-      parser.on('data', onParserData);
-
-      await pipelineAsync(...streams);
+    try {
+      await pipelineAsync(...allStreams);
       
-      aggregator.removeListener('data', onAggregatorData);
       lineSplitter.removeListener('data', onLineSplitterData);
       parser.removeListener('data', onParserData);
 
@@ -110,10 +102,11 @@ class StreamLogParser {
         ...errorStats
       };
 
-      cleanup();
       return results;
     } catch (err) {
-      cleanup();
+      lineSplitter.removeListener('data', onLineSplitterData);
+      parser.removeListener('data', onParserData);
+      
       throw new Error(`Pipeline failed: ${err.message}`);
     }
   }

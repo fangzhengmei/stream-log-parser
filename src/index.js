@@ -61,37 +61,59 @@ class StreamLogParser {
       }
     };
 
-    aggregator.on('data', (data) => {
-      if (data.type === 'window') {
-        results.windows.push(data.data);
-        results.stats.windowCount++;
-      } else if (data.type === 'error_line') {
-        results.errorLines.push(data.data);
-        results.stats.errorLines++;
-      }
-    });
-
-    lineSplitter.on('data', () => {
-      results.stats.totalLines++;
-    });
-
-    parser.on('data', (data) => {
-      if (data.parsed && data.timestamp !== null) {
-        results.stats.parsedLines++;
-      }
-    });
+    const cleanup = () => {
+      streams.forEach(stream => {
+        try {
+          if (stream && typeof stream.destroy === 'function') {
+            stream.destroy();
+          }
+        } catch (e) {
+          // 忽略销毁时的错误
+        }
+      });
+    };
 
     try {
+      const onAggregatorData = (data) => {
+        if (data.type === 'window') {
+          results.windows.push(data.data);
+          results.stats.windowCount++;
+        } else if (data.type === 'error_line') {
+          results.errorLines.push(data.data);
+          results.stats.errorLines++;
+        }
+      };
+
+      const onLineSplitterData = () => {
+        results.stats.totalLines++;
+      };
+
+      const onParserData = (data) => {
+        if (data.parsed && data.timestamp !== null) {
+          results.stats.parsedLines++;
+        }
+      };
+
+      aggregator.on('data', onAggregatorData);
+      lineSplitter.on('data', onLineSplitterData);
+      parser.on('data', onParserData);
+
       await pipelineAsync(...streams);
       
+      aggregator.removeListener('data', onAggregatorData);
+      lineSplitter.removeListener('data', onLineSplitterData);
+      parser.removeListener('data', onParserData);
+
       const errorStats = errorHandler.getErrorStats();
       results.stats = {
         ...results.stats,
         ...errorStats
       };
 
+      cleanup();
       return results;
     } catch (err) {
+      cleanup();
       throw new Error(`Pipeline failed: ${err.message}`);
     }
   }

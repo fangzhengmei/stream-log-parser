@@ -16,10 +16,20 @@ describe('StreamLogParser Integration Tests', () => {
     errorLogPath = path.join(tempDir, 'errors.log');
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    parser = null;
+    
     if (tempDir && fs.existsSync(tempDir)) {
-      fs.rmdirSync(tempDir, { recursive: true });
+      try {
+        await fs.promises.rm(tempDir, { recursive: true, force: true });
+      } catch (e) {
+        // 忽略清理错误
+      }
     }
+    
+    tempDir = null;
+    testLogPath = null;
+    errorLogPath = null;
   });
 
   describe('parseLogFile()', () => {
